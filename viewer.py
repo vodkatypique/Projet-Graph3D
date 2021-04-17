@@ -11,6 +11,7 @@ import OpenGL.GL as GL              # standard Python OpenGL wrapper
 import glfw                         # lean window system wrapper for OpenGL
 import numpy as np                  # all matrix manipulations & OpenGL args
 import assimpcy                     # 3D resource loader
+import csv
 
 from core import RotationControlNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, Viewer, Texture, TexturedMesh
 from transform import translate, rotate, scale, vec, quaternion, quaternion_from_euler
@@ -101,6 +102,24 @@ def load_textured(file, shader, tex_file=None):
     print('Loaded %s\t(%d meshes, %d faces)' % (file, len(meshes), size))
     return meshes
 
+#--------------- Load CSV ----------------------------------------------------
+
+def load_csv(file, shader):
+    """ Load mesh with the transofrmation written in the file """
+    with open(file) as f:
+        csv_data = csv.reader(f, delimiter=",")
+        next(csv_data)
+        meshes = []
+        for ligne in csv_data:
+            mesh_name, x, y, z, R_x, R_y, R_z, S = ligne
+            place = Node(transform = translate(float(x), float(y), float(z)) 
+                                    @ scale(float(S), float(S), float(S)) 
+                                    @ rotate((1, 0, 0), float(R_x))
+                                    @ rotate((0, 1, 0), float(R_y))
+                                    @ rotate((0, 0, 1), float(R_z)))
+            place.add(*load("castle/" + mesh_name, shader))
+            meshes.append(place)
+    return meshes
 
 # -------------- main program and scene setup --------------------------------
 def main():
@@ -112,9 +131,9 @@ def main():
     shader_texture = Shader("shaders/texture.vert", "shaders/texture.frag")
     
 
-    viewer.add(*load_textured("Projet_Medieval/medieval_characters_pack_FBX/archer/archer_standing.FBX", 
-                                shader_texture,
-                                "Projet_Medieval/medieval_characters_pack_FBX/archer/archer.tga"))
+    # viewer.add(*load("WallEntranceBricks.fbx", 
+    #                              shader))
+    viewer.add(*load_csv("castle/castle.csv", shader))
 
     # start rendering loop
     viewer.run()
