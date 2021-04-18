@@ -248,14 +248,15 @@ class TexturedMesh(Mesh):
     """ Texture Mesh class """
 
     def __init__(self, shader, texture, attributes, index, second_texture = None,
-                 light_dir=(0, -1, -1),  k_a=(0, 0, 0), k_s=(1, 1, 1), s=16.):
+                 light_dir=(0, -1, -1), light_pos=(0, 1, 0), k_a=(0, 0, 0), k_d=(1, 1, 0), k_s=(1, 1, 1), s=16.):
         super().__init__(shader, attributes, index)
         self.texture = texture
         self.second_texture = second_texture
         self.light_dir = light_dir
-        self.k_a, self.k_s, self.s = k_a, k_s, s
+        self.light_pos = light_pos
+        self.k_a, self.k_d, self.k_s, self.s = k_a, k_d, k_s, s
 
-        names = ['diffuse_map', 'diffuse_map_2', 'light_dir', 'k_a', 's', 'k_s', 'w_camera_position']
+        names = ['diffuse_map', 'diffuse_map_2', 'light_dir', 'light_pos', 'k_a', 'k_d', 's', 'k_s', 'w_camera_position']
         loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
         self.loc.update(loc)
 
@@ -271,9 +272,11 @@ class TexturedMesh(Mesh):
         # light parameters
 
         GL.glUniform3fv(self.loc['light_dir'], 1, self.light_dir)
+        GL.glUniform3fv(self.loc['light_pos'], 1, self.light_pos)
 
         # setup material parameters
         GL.glUniform3fv(self.loc['k_a'], 1, self.k_a)
+        GL.glUniform3fv(self.loc['k_d'], 1, self.k_d)
         GL.glUniform3fv(self.loc['k_s'], 1, self.k_s)
         GL.glUniform1f(self.loc['s'], max(self.s, 0.001))
 
@@ -292,6 +295,45 @@ class TexturedMesh(Mesh):
             GL.glUniform1i(self.loc['diffuse_map_2'], 1)
 
         super().draw(projection, view, model, primitives)
+
+        # -------------- Phong rendered Mesh class -----------------------------------
+class PhongMesh(Mesh):
+    """ Mesh with Phong illumination """
+
+    def __init__(self, shader, attributes, index=None,
+                 light_dir=(0, -1, 0), light_pos=(0, 1, 0),
+                 k_a=(0, 0, 0), k_d=(1, 1, 0), k_s=(1, 1, 1), s=16.):
+        super().__init__(shader, attributes, index)
+        self.light_dir = light_dir
+        self.light_pos = light_pos
+        self.k_a, self.k_d, self.k_s, self.s = k_a, k_d, k_s, s
+
+        # retrieve OpenGL locations of shader variables at initialization
+        names = ['light_dir', 'light_pos', 'k_a', 's', 'k_s', 'k_d', 'w_camera_position']
+
+        loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
+        self.loc.update(loc)
+
+
+    def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
+
+        GL.glUseProgram(self.shader.glid)
+        # setup light parameters
+        GL.glUniform3fv(self.loc['light_dir'], 2, self.light_dir)
+        GL.glUniform3fv(self.loc['light_pos'], 2, self.light_pos)
+
+        # setup material parameters
+        GL.glUniform3fv(self.loc['k_a'], 1, self.k_a)
+        GL.glUniform3fv(self.loc['k_d'], 1, self.k_d)
+        GL.glUniform3fv(self.loc['k_s'], 1, self.k_s)
+        GL.glUniform1f(self.loc['s'], max(self.s, 0.001))
+
+        # world camera position for Phong illumination specular component
+        w_camera_position = np.linalg.inv(view)[:,3]
+        GL.glUniform3fv(self.loc['w_camera_position'], 1, w_camera_position)
+
+        super().draw(projection, view, model, primitives)
+    
 
 # ------------  Viewer class & window management ------------------------------
 class Viewer(Node):

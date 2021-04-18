@@ -13,7 +13,7 @@ import numpy as np                  # all matrix manipulations & OpenGL args
 import assimpcy                     # 3D resource loader
 import csv
 
-from core import RotationControlNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, Viewer, Texture, TexturedMesh
+from core import RotationControlNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, Viewer, Texture, TexturedMesh, PhongMesh
 from transform import translate, rotate, scale, vec, quaternion, quaternion_from_euler
 
 
@@ -65,7 +65,7 @@ def load(file, shader):
     return meshes
 
 # -------------- Function to load texture Mesh from file ----------------------------------
-def load_textured(file, shader, tex_file=None):
+def load_textured(file, shader, tex_file=None, light_dir=(0, -1, -1), light_pos=(0, 1, 0)):
     """ load resources from file using assimp, return list of TexturedMesh """
     try:
         pp = assimpcy.aiPostProcessSteps
@@ -95,16 +95,57 @@ def load_textured(file, shader, tex_file=None):
         mat = scene.mMaterials[mesh.mMaterialIndex].properties
         assert mat['diffuse_map'], "Trying to map using a textureless material"
         attributes = [mesh.mVertices, mesh.mTextureCoords[0], mesh.mNormals]
-        mesh = TexturedMesh(shader, mat['diffuse_map'], attributes, mesh.mFaces)
+        mesh = TexturedMesh(shader, mat['diffuse_map'], attributes, mesh.mFaces,
+                         k_d=mat.get('COLOR_DIFFUSE', (1, 1, 1)),
+                         k_s=mat.get('COLOR_SPECULAR', (1, 1, 1)),
+                         k_a = (0.3, 0.3, 0.3),
+                         s=mat.get('SHININESS', 16.),
+                         light_dir=light_dir,
+                         light_pos=light_pos)
         meshes.append(mesh)
 
     size = sum((mesh.mNumFaces for mesh in scene.mMeshes))
     print('Loaded %s\t(%d meshes, %d faces)' % (file, len(meshes), size))
     return meshes
 
+
+# -------------- LOAD Phong -----------------------------------------
+def load_phong_mesh(file, shader, light_dir, light_pos):
+    """ load resources from file using assimp, return list of ColorMesh """
+    try:
+        pp = assimpcy.aiPostProcessSteps
+        flags = pp.aiProcess_Triangulate | pp.aiProcess_GenSmoothNormals
+        scene = assimpcy.aiImportFile(file, flags)
+    except assimpcy.all.AssimpError as exception:
+        print('ERROR loading', file + ': ', exception.args[0].decode())
+        return []
+
+    # prepare mesh nodes
+    meshes = []
+    for mesh in scene.mMeshes:
+        mat = scene.mMaterials[mesh.mMaterialIndex].properties
+        mesh = PhongMesh(shader, [mesh.mVertices, mesh.mNormals], mesh.mFaces,
+                         k_d=mat.get('COLOR_DIFFUSE', (1, 1, 1)),
+                         k_s=mat.get('COLOR_SPECULAR', (1, 1, 1)),
+                        # k_a=mat.get('COLOR_AMBIENT', (0, 0, 0)),
+                         k_a = (0.1, 0.1, 0.1),
+                         s=mat.get('SHININESS', 16.),
+                         light_dir=light_dir,
+                         light_pos=light_pos)
+        meshes.append(mesh)
+
+    size = sum((mesh.mNumFaces for mesh in scene.mMeshes))
+    print('Loaded %s\t(%d meshes, %d faces)' % (file, len(meshes), size))
+    return meshes
+
+
+#--------------- Load textured if it has a texture or a phong mesh -----------
+
+def load_textured_or_phong_meshes(file, shader, light_dir, light_pos):
+    return
 #--------------- Load CSV ----------------------------------------------------
 
-def load_csv(file, shader):
+def load_csv(file, shader_texture, shader_phong, light_dir, light_pos):
     """ Load mesh with the transofrmation written in the file """
     with open(file) as f:
         csv_data = csv.reader(f, delimiter=",")
@@ -117,7 +158,12 @@ def load_csv(file, shader):
                                     @ rotate((1, 0, 0), float(R_x))
                                     @ rotate((0, 1, 0), float(R_y))
                                     @ rotate((0, 0, 1), float(R_z)))
-            place.add(*load("castle/" + mesh_name, shader))
+            mesh = []
+            try:
+                mesh = load_textured("castle/" + mesh_name, shader_texture, light_dir=light_dir, light_pos=light_pos)
+            except(KeyError):
+                mesh = load_phong_mesh("castle/" + mesh_name, shader_phong, light_dir, light_pos)
+            place.add(*mesh)
             meshes.append(place)
     return meshes
 
@@ -129,11 +175,14 @@ def main():
     # default color shader
     shader = Shader("shaders/color.vert", "shaders/color.frag")
     shader_texture = Shader("shaders/texture.vert", "shaders/texture.frag")
+    shader_phong = Shader("shaders/phong.vert", "shaders/phong.frag")
     
+    light_dir = (0, 0, -1)
+    light_pos = (0, 0, 1000)
 
-    # viewer.add(*load("WallEntranceBricks.fbx", 
-    #                              shader))
-    viewer.add(*load_csv("castle/castle.csv", shader))
+    # viewer.add(*load_textured("castle/church.FBX", 
+    #                               shader_texture, light_pos=light_pos, light_dir=light_dir))
+    viewer.add(*load_csv("castle/castle.csv", shader_texture, shader_phong, light_dir, light_pos))
 
     # start rendering loop
     viewer.run()
