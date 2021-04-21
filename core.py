@@ -8,7 +8,8 @@ from bisect import bisect_left      # search sorted keyframe lists
 import OpenGL.GL as GL              # standard Python OpenGL wrapper
 import glfw                         # lean window system wrapper for OpenGL
 import numpy as np                  # all matrix manipulations & OpenGL args
-
+from OpenGL.GLU import *
+from OpenGL.GLUT import *
 # our transform functions
 from transform import Trackball, identity, rotate, lerp, quaternion_slerp, quaternion_matrix, translate, scale
 
@@ -334,6 +335,68 @@ class PhongMesh(Mesh):
 
         super().draw(projection, view, model, primitives)
     
+
+class Skybox(Mesh):
+    """ Skybox object """
+
+    def __init__(self, shader, tex_file):
+
+        vertices = 4000 * np.array(
+            ((-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)), np.float32)
+        faces = np.array(((0, 1, 2), (0, 2, 3), 
+                          (5, 1, 0), (4, 5, 0), 
+                          (0, 3, 7), (0, 7, 4), 
+                          (3, 2, 6), (3, 6, 7),
+                          (6, 2, 1), (5, 6, 1),
+                          (6, 5, 4), (7, 6, 4)), np.uint32)
+        normals = - vertices
+        super().__init__(shader, [vertices, np.array([(1,1)]), normals], faces)
+
+        names = ['diffuse_map', 'w_camera_position']
+        loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
+        self.loc.update(loc)
+
+        # interactive toggles
+        self.wrap = cycle([GL.GL_REPEAT, GL.GL_MIRRORED_REPEAT,
+                           GL.GL_CLAMP_TO_BORDER, GL.GL_CLAMP_TO_EDGE])
+        self.filter = cycle([(GL.GL_NEAREST, GL.GL_NEAREST),
+                             (GL.GL_LINEAR, GL.GL_LINEAR),
+                             (GL.GL_LINEAR, GL.GL_LINEAR_MIPMAP_LINEAR)])
+        wrap_mode, filter_mode = next(self.wrap), next(self.filter)
+        self.tex_file = tex_file
+
+        self.texture_glid = GL.glGenTextures(1)
+        try:
+            # imports image as a numpy array in exactly right format
+            GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture_glid)
+
+            for i in range(6):
+                image = Image.open("sky/sky{}.png".format(i)).transpose(Image.FLIP_LEFT_RIGHT).resize((512, 512))
+                tex = image.tobytes()
+                GL.glTexImage2D(GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL.GL_RGBA, 512,
+                            512, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, tex)
+
+
+            GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+            GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+            GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+            GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
+            GL.glGenerateMipmap(GL.GL_TEXTURE_CUBE_MAP)
+            message = 'Loaded texture %s\t'
+            print(message % (tex_file))
+        except FileNotFoundError:
+            print("ERROR: unable to load texture file %s" % tex_file)
+
+
+    def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
+        GL.glUseProgram(self.shader.glid)
+
+        # texture access setups
+        GL.glActiveTexture(GL.GL_TEXTURE0)
+        GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture_glid)
+        GL.glUniform1i(self.loc['diffuse_map'], 0)
+        super().draw(projection, view, model, primitives)
+
 
 # ------------  Viewer class & window management ------------------------------
 class Viewer(Node):

@@ -13,7 +13,7 @@ import numpy as np                  # all matrix manipulations & OpenGL args
 import assimpcy                     # 3D resource loader
 import csv
 
-from core import RotationControlNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, Viewer, Texture, TexturedMesh, PhongMesh
+from core import RotationControlNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, Viewer, Texture, TexturedMesh, PhongMesh, Skybox
 from transform import translate, rotate, scale, vec, quaternion, quaternion_from_euler
 
 
@@ -175,11 +175,13 @@ def main():
     # default color shader
     shader = Shader("shaders/color.vert", "shaders/color.frag")
     shader_texture = Shader("shaders/texture.vert", "shaders/texture.frag")
+    shader_skybox = Shader("shaders/skybox.vert", "shaders/skybox.frag")
     shader_phong = Shader("shaders/phong.vert", "shaders/phong.frag")
     
     light_dir = (0, 0, -1)
     light_pos = (0, 0, 1000)
 
+    viewer.add(Skybox(shader_skybox, "sky.png"))
     # viewer.add(*load_textured("castle/church.FBX", 
     #                               shader_texture, light_pos=light_pos, light_dir=light_dir))
     viewer.add(*load_csv("castle/castle.csv", shader_texture, shader_phong, light_dir, light_pos))
