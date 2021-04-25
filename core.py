@@ -341,7 +341,7 @@ class Skybox(Mesh):
 
     def __init__(self, shader, tex_file):
 
-        vertices = 4000 * np.array(
+        vertices = (0, 0, 30000) + 40000 * np.array(
             ((-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)), np.float32)
         faces = np.array(((0, 1, 2), (0, 2, 3), 
                           (5, 1, 0), (4, 5, 0), 
@@ -349,6 +349,7 @@ class Skybox(Mesh):
                           (3, 2, 6), (3, 6, 7),
                           (6, 2, 1), (5, 6, 1),
                           (6, 5, 4), (7, 6, 4)), np.uint32)
+        print(vertices)
         normals = - vertices
         super().__init__(shader, [vertices, np.array([(1,1)]), normals], faces)
 
@@ -371,10 +372,10 @@ class Skybox(Mesh):
             GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture_glid)
 
             for i in range(6):
-                image = Image.open("sky/sky{}.png".format(i)).transpose(Image.FLIP_LEFT_RIGHT).resize((512, 512))
+                image = Image.open("sky/sky{}.png".format(i)).transpose(Image.FLIP_LEFT_RIGHT).resize((900, 900))
                 tex = image.tobytes()
-                GL.glTexImage2D(GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL.GL_RGBA, 512,
-                            512, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, tex)
+                GL.glTexImage2D(GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL.GL_RGBA, 900,
+                            900, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, tex)
 
 
             GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
@@ -396,6 +397,36 @@ class Skybox(Mesh):
         GL.glBindTexture(GL.GL_TEXTURE_CUBE_MAP, self.texture_glid)
         GL.glUniform1i(self.loc['diffuse_map'], 0)
         super().draw(projection, view, model, primitives)
+
+
+# -------------- Example texture plane class ----------------------------------
+class TexturedPlane(TexturedMesh):
+    """ Simple first textured object """
+
+    def __init__(self, tex_file, shader, light_dir, light_pos):
+
+        vertices = 100 * np.array(
+            ((-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)), np.float32)
+        faces = np.array(((0, 1, 2), (0, 2, 3)), np.uint32)
+        texture_coord = 100 * np.array(
+            ((-1, -1), (1, -1), (1, 1), (-1, 1)), np.float32)
+        normals = np.array(((0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)), np.float32)
+
+
+
+        # interactive toggles
+        self.wrap = cycle([GL.GL_REPEAT, GL.GL_MIRRORED_REPEAT,
+                           GL.GL_CLAMP_TO_BORDER, GL.GL_CLAMP_TO_EDGE])
+        self.filter = cycle([(GL.GL_NEAREST, GL.GL_NEAREST),
+                             (GL.GL_LINEAR, GL.GL_LINEAR),
+                             (GL.GL_LINEAR, GL.GL_LINEAR_MIPMAP_LINEAR)])
+        self.wrap_mode, self.filter_mode = next(self.wrap), next(self.filter)
+        self.tex_file = tex_file
+        self.texture = Texture(tex_file, self.wrap_mode, *self.filter_mode)
+
+        super().__init__(shader, self.texture, [vertices, texture_coord, normals], faces,
+                         light_dir= light_dir, light_pos=light_pos, 
+                         k_a = (0.3, 0.3, 0.3), k_s=(0.5, 0.5, 0.5))
 
 
 # ------------  Viewer class & window management ------------------------------

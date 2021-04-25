@@ -1,12 +1,9 @@
 MESH,X,Y,Z,R_x,R_y,R_z,S
-ambar.FBX,-420,0,0,0,0,90,2.5
-bonTerrain.obj,0,0,-30,-270,0,0,50
+ambar.FBX,-420,0,-50,0,0,90,2.5
+bonTerrain.obj,-200,200,-60,-270,90,0,50
 Bridge.fbx,-560,480,0,0,0,0,100
 church.FBX,-80,1150,0,0,0,0,3
 Door.fbx,-560,480,0,0,0,0,100
-Door_LeftDoor,-560,480,0,0,0,0,100
-Door_RightDoor,-560,480,0,0,0,0,100
-Floor_400x400,-2000,-2000,0,0,0,0,10
 house_01.FBX,-770,200,0,0,0,180,3
 LargeSimpleTower.fbx,-890,119,0,0,0,0,100
 LargeSimpleTower.fbx,-530,-220,0,0,0,0,100
@@ -41,8 +38,7 @@ TallWallBricks.fbx,-290,-220,0,0,0,0,100
 TallWallBricks.fbx,150,-130,0,0,0,90,100
 WallEntranceBricks.fbx,-560,480,0,0,0,180,100
 tree_01.FBX,-30,-140,0,0,0,0,1
-tree_01.FBX,-580,-40,0,0,0,0,1
-water_box.FBX,-540,120,0,0,0,45,3
+water_box.FBX,-540,120,20,0,0,45,3
 wood_wall_small_01.FBX,-470,370,20,0,90,90,1
 wood_wall_small_01.FBX,-470,300,20,0,90,90,1
 wood_wall_small_01.FBX,-430,260,20,90,0,0,1
