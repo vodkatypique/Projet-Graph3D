@@ -349,7 +349,6 @@ class Skybox(Mesh):
                           (3, 2, 6), (3, 6, 7),
                           (6, 2, 1), (5, 6, 1),
                           (6, 5, 4), (7, 6, 4)), np.uint32)
-        print(vertices)
         normals = - vertices
         super().__init__(shader, [vertices, np.array([(1,1)]), normals], faces)
 
