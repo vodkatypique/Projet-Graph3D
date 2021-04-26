@@ -1,9 +1,8 @@
 MESH,X,Y,Z,R_x,R_y,R_z,S
 ambar.FBX,-420,0,-50,0,0,90,2.5
-bonTerrain.obj,-200,200,-60,-270,90,0,50
-Bridge.fbx,-560,480,0,0,0,0,100
+bonTerrain.obj,0,0,-60,-270,90,0,50
+Bridge.fbx,-560,480,0,0,0,180,100
 church.FBX,-80,1150,0,0,0,0,3
-Door.fbx,-560,480,0,0,0,0,100
 house_01.FBX,-770,200,0,0,0,180,3
 LargeSimpleTower.fbx,-890,119,0,0,0,0,100
 LargeSimpleTower.fbx,-530,-220,0,0,0,0,100

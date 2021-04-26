@@ -176,20 +176,6 @@ class FixedNode(Node):
         super().draw(projection, view, model)
 
 
-class RotationControlNode(Node):
-    def __init__(self, key_up, key_down, initial_transform, axis, angle=0):
-        super().__init__(transform=initial_transform @ rotate(axis, angle))
-        self.initial_transform = initial_transform
-        self.angle, self.axis = angle, axis
-        self.key_up, self.key_down = key_up, key_down
-
-    def key_handler(self, key):
-        self.angle += 5 * int(key == self.key_up)
-        self.angle -= 5 * int(key == self.key_down)
-        self.transform = self.initial_transform @ rotate(self.axis, self.angle)
-        super().key_handler(key)
-
-
 class KeyFrames:
     """ Stores keyframe pairs for any value type with interpolation_function"""
     def __init__(self, time_value_pairs, interpolation_function=lerp):
@@ -292,8 +278,6 @@ class TexturedMesh(Mesh):
     def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
         GL.glUseProgram(self.shader.glid)
 
-        # self.light_dir = (0, np.cos(glfw.get_time()), np.sin(glfw.get_time()))
-
         # setup shader parameters
         self.shader.setup_light(self.light_dir, self.light_pos)
         self.shader.setup_material(self.k_a, self.k_d, self.k_s, max(self.s, 0.001))
@@ -341,7 +325,7 @@ class PhongMesh(Mesh):
 
         super().draw(projection, view, model, primitives)
     
-
+# ----------------------------- Skybox ---------------------------
 class Skybox(Mesh):
     """ Skybox object """
 

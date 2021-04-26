@@ -17,29 +17,6 @@ from core import FixedNode, Shader, Mesh, Node, KeyFrames, KeyFrameControlNode, 
 from transform import translate, rotate, scale, vec, quaternion_from_euler, quaternion_slerp
 
 
-class Axis(Mesh):
-    """ Axis object useful for debugging coordinate frames """
-    def __init__(self, shader):
-        pos = ((0, 0, 0), (1, 0, 0), (0, 0, 0), (0, 1, 0), (0, 0, 0), (0, 0, 1))
-        col = ((1, 0, 0), (1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 0, 1), (0, 0, 1))
-        super().__init__(shader, [pos, col])
-
-    def draw(self, projection, view, model, primitives=GL.GL_LINES):
-        super().draw(projection, view, model, primitives)
-
-
-class SimpleTriangle(Mesh):
-    """Hello triangle object"""
-
-    def __init__(self, shader):
-
-        # triangle position buffer
-        position = np.array(((0, .5, 0), (.5, -.5, 0), (-.5, -.5, 0)), 'f')
-        color = np.array(((1, 0, 0), (0, 1, 0), (0, 0, 1)), 'f')
-
-        super().__init__(shader, [position, color])
-
-
 # -------------- Cylinder ----------------------------------------------------
 class WoodenCylinder(Node):
     """ Very simple cylinder based on practical 2 load function """
@@ -257,7 +234,6 @@ def main():
 
     # default color shader
     shader_skybox = Shader("shaders/skybox.vert", "shaders/skybox.frag")
-    # shader_color = Shader("shaders/color.vert", "shaders/color.frag")
     shader_phong = Shader("shaders/phong.vert", "shaders/phong.frag")
     shader_texture = Shader("shaders/texture.vert", "shaders/texture.frag")
 
@@ -269,17 +245,21 @@ def main():
     catapult = Catapult(shader_texture, light_dir, light_pos)
     catapult.transform = translate(0, 800, 35) @ rotate((0, 0, 1), -90) @ scale(5, 5, 5)
 
-    # flat_ground = Node(transform=scale(500, 500, 500))
-    # flat_ground.add(TexturedPlane("castle/grass.png", shader_texture, light_dir, light_pos))
-
     viewer.add(Node(
         children=(
             *load_csv("castle/castle.csv", shader_texture, shader_phong, light_dir, light_pos),
             catapult,
-            # flat_ground
         ),
         transform=rotate((1, 0, 0), -90)
     ))
+
+    instructions = """
+    Il s'agit du projet de graphique 3D de Nicolas Serrand, Rémi Labergère et Clément Caffin, étudiants en 2A à Grenoble-INP ENSIMAG.
+    La caméra peut se déplacer grâce aux touches ZQSD, accélérer en maintenant CTRL, monter avec SPACE et descendre avec SHIFT.
+    Vous pouvez lancer l'animation de la catapulte avec la touche C.
+    Merci à vous!
+    """
+    print(instructions)
 
     # start rendering loop
     viewer.run()
