@@ -1,6 +1,5 @@
 # Python built-in modules
-import os                           # os function, i.e. checking file status
-import sys                          # for sys.exit
+import time                         # for frames statistics
 from itertools import cycle         # allows easy circular choice list
 from bisect import bisect_left      # search sorted keyframe lists
 
@@ -8,12 +7,13 @@ from bisect import bisect_left      # search sorted keyframe lists
 import OpenGL.GL as GL              # standard Python OpenGL wrapper
 import glfw                         # lean window system wrapper for OpenGL
 import numpy as np                  # all matrix manipulations & OpenGL args
-from OpenGL.GLU import *
 from OpenGL.GLUT import *
 # our transform functions
-from transform import Trackball, identity, rotate, lerp, quaternion_slerp, quaternion_matrix, translate, scale
+from camera import Camera
+from transform import identity, rotate, lerp, quaternion_slerp, quaternion_matrix, translate, scale
 
 from PIL import Image
+
 
 # ------------ low level OpenGL object wrappers ----------------------------
 class Shader:
@@ -57,6 +57,24 @@ class Shader:
         GL.glUseProgram(0)
         if self.glid:                      # if this is a valid shader object
             GL.glDeleteProgram(self.glid)  # object dies => destroy GL object
+
+    def loc(self, loc_name):
+        return GL.glGetUniformLocation(self.glid, loc_name)
+
+    def setup_camera(self, view):
+        # world camera position for Phong illumination specular component
+        w_camera_position = np.linalg.inv(view)[:, 3]
+        GL.glUniform3fv(self.loc('w_camera_position'), 1, w_camera_position)
+
+    def setup_material(self, k_a, k_d, k_s, s):
+        GL.glUniform3fv(self.loc('k_a'), 1, k_a)
+        GL.glUniform3fv(self.loc('k_d'), 1, k_d)
+        GL.glUniform3fv(self.loc('k_s'), 1, k_s)
+        GL.glUniform1f(self.loc('s'), max(s, 0.001))
+
+    def setup_light(self, light_dir, light_pos):
+        GL.glUniform3fv(self.loc('light_dir'), 1, light_dir)
+        GL.glUniform3fv(self.loc('light_pos'), 1, light_pos)
 
 
 class VertexArray:
@@ -147,6 +165,17 @@ class Node:
                 child.key_handler(key)
 
 
+class FixedNode(Node):
+    """ Scene graph node that follow camera movement to never move on the screen """
+    def __init__(self, camera: Camera, children=()):
+        super().__init__(children, translate(camera.position))
+        self.camera = camera
+
+    def draw(self, projection, view, model):
+        self.transform = translate(self.camera.position)
+        super().draw(projection, view, model)
+
+
 class RotationControlNode(Node):
     def __init__(self, key_up, key_down, initial_transform, axis, angle=0):
         super().__init__(transform=initial_transform @ rotate(axis, angle))
@@ -170,19 +199,19 @@ class KeyFrames:
         self.times, self.values = zip(*keyframes)  # pairs list -> 2 lists
         self.interpolate = interpolation_function
 
-    def value(self, time):
+    def value(self, time_sec):
         """ Computes interpolated value from keyframes, for a given time """
 
         # 1. ensure time is within bounds else return boundary keyframe
-        if time <= self.times[0]:
+        if time_sec <= self.times[0]:
             return self.values[0]
-        elif time >= self.times[-1]:
+        elif time_sec >= self.times[-1]:
             return self.values[-1]
         # 2. search for closest index entry in self.times, using bisect_left function
-        closest_index = bisect_left(self.times, time) - 1
+        closest_index = bisect_left(self.times, time_sec) - 1
         # 3. using the retrieved index, interpolate between the two neighboring values
         # in self.values, using the initially stored self.interpolate function
-        fraction = (time - self.times[closest_index]) / (self.times[closest_index + 1] - self.times[closest_index])
+        fraction = (time_sec - self.times[closest_index]) / (self.times[closest_index + 1] - self.times[closest_index])
         return self.interpolate(self.values[closest_index], self.values[closest_index + 1], fraction)
 
 
@@ -194,11 +223,11 @@ class TransformKeyFrames:
         self.rotation_kf = KeyFrames(rotate_keys, quaternion_slerp)
         self.scale_kf = KeyFrames(scale_keys)
 
-    def value(self, time):
+    def value(self, time_sec):
         """ Compute each component's interpolation and compose TRS matrix """
-        translation_value = self.translation_kf.value(time)
-        rotation_value = self.rotation_kf.value(time)
-        scale_value = self.scale_kf.value(time)
+        translation_value = self.translation_kf.value(time_sec)
+        rotation_value = self.rotation_kf.value(time_sec)
+        scale_value = self.scale_kf.value(time_sec)
         return translate(translation_value) @ quaternion_matrix(rotation_value) @ scale(scale_value)
 
 
@@ -243,12 +272,11 @@ class Texture:
         return [self].__iter__()
 
 
-
 # -------------- Texture Mesh class ----------------------------------
 class TexturedMesh(Mesh):
     """ Texture Mesh class """
 
-    def __init__(self, shader, texture, attributes, index, second_texture = None,
+    def __init__(self, shader, texture, attributes, index, second_texture=None,
                  light_dir=(0, -1, -1), light_pos=(0, 1, 0), k_a=(0, 0, 0), k_d=(1, 1, 0), k_s=(1, 1, 1), s=16.):
         super().__init__(shader, attributes, index)
         self.texture = texture
@@ -257,33 +285,19 @@ class TexturedMesh(Mesh):
         self.light_pos = light_pos
         self.k_a, self.k_d, self.k_s, self.s = k_a, k_d, k_s, s
 
-        names = ['diffuse_map', 'diffuse_map_2', 'light_dir', 'light_pos', 'k_a', 'k_d', 's', 'k_s', 'w_camera_position']
+        names = ['diffuse_map', 'diffuse_map_2']
         loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
         self.loc.update(loc)
-
-
-    def key_handler(self, key):
-        # some interactive elements
-        pass
 
     def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
         GL.glUseProgram(self.shader.glid)
 
         # self.light_dir = (0, np.cos(glfw.get_time()), np.sin(glfw.get_time()))
-        # light parameters
 
-        GL.glUniform3fv(self.loc['light_dir'], 1, self.light_dir)
-        GL.glUniform3fv(self.loc['light_pos'], 1, self.light_pos)
-
-        # setup material parameters
-        GL.glUniform3fv(self.loc['k_a'], 1, self.k_a)
-        GL.glUniform3fv(self.loc['k_d'], 1, self.k_d)
-        GL.glUniform3fv(self.loc['k_s'], 1, self.k_s)
-        GL.glUniform1f(self.loc['s'], max(self.s, 0.001))
-
-        # world camera position for Phong illumination specular component
-        w_camera_position = np.linalg.inv(view)[:,3]
-        GL.glUniform3fv(self.loc['w_camera_position'], 1, w_camera_position)
+        # setup shader parameters
+        self.shader.setup_light(self.light_dir, self.light_pos)
+        self.shader.setup_material(self.k_a, self.k_d, self.k_s, max(self.s, 0.001))
+        self.shader.setup_camera(view)
 
         # texture access setups
         GL.glActiveTexture(GL.GL_TEXTURE0)
@@ -297,7 +311,8 @@ class TexturedMesh(Mesh):
 
         super().draw(projection, view, model, primitives)
 
-        # -------------- Phong rendered Mesh class -----------------------------------
+
+# -------------- Phong rendered Mesh class -----------------------------------
 class PhongMesh(Mesh):
     """ Mesh with Phong illumination """
 
@@ -315,23 +330,14 @@ class PhongMesh(Mesh):
         loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
         self.loc.update(loc)
 
-
     def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
 
         GL.glUseProgram(self.shader.glid)
-        # setup light parameters
-        GL.glUniform3fv(self.loc['light_dir'], 2, self.light_dir)
-        GL.glUniform3fv(self.loc['light_pos'], 2, self.light_pos)
 
-        # setup material parameters
-        GL.glUniform3fv(self.loc['k_a'], 1, self.k_a)
-        GL.glUniform3fv(self.loc['k_d'], 1, self.k_d)
-        GL.glUniform3fv(self.loc['k_s'], 1, self.k_s)
-        GL.glUniform1f(self.loc['s'], max(self.s, 0.001))
-
-        # world camera position for Phong illumination specular component
-        w_camera_position = np.linalg.inv(view)[:,3]
-        GL.glUniform3fv(self.loc['w_camera_position'], 1, w_camera_position)
+        # setup shader parameters
+        self.shader.setup_light(self.light_dir, self.light_pos)
+        self.shader.setup_material(self.k_a, self.k_d, self.k_s, max(self.s, 0.001))
+        self.shader.setup_camera(view)
 
         super().draw(projection, view, model, primitives)
     
@@ -340,29 +346,31 @@ class Skybox(Mesh):
     """ Skybox object """
 
     def __init__(self, shader, tex_file):
-
-        vertices = (0, 0, 30000) + 40000 * np.array(
-            ((-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)), np.float32)
-        faces = np.array(((0, 1, 2), (0, 2, 3), 
-                          (5, 1, 0), (4, 5, 0), 
-                          (0, 3, 7), (0, 7, 4), 
-                          (3, 2, 6), (3, 6, 7),
-                          (6, 2, 1), (5, 6, 1),
-                          (6, 5, 4), (7, 6, 4)), np.uint32)
-        normals = - vertices
-        super().__init__(shader, [vertices, np.array([(1,1)]), normals], faces)
+        # Comments assume default starting position: facing -Z
+        vertices = 40000 * np.array((
+            (-1, -1, -1),   # 0 - bottom far left
+            (1, -1, -1),    # 1 - bottom far right
+            (1, 1, -1),     # 2 - top far right
+            (-1, 1, -1),    # 3 - top far left
+            (-1, -1, 1),    # 4 - bottom near left
+            (1, -1, 1),     # 5 - bottom near right
+            (1, 1, 1),      # 6 - top near right
+            (-1, 1, 1)      # 7 - top near left
+        ), np.float32)
+        faces = np.array((
+            (0, 1, 2), (0, 2, 3),   # far face
+            (5, 1, 0), (4, 5, 0),   # bottom face
+            (0, 3, 7), (0, 7, 4),   # left face
+            (3, 2, 6), (3, 6, 7),   # top face
+            (6, 2, 1), (5, 6, 1),   # back face
+            (6, 5, 4), (7, 6, 4)    # near face
+        ), np.uint32)
+        super().__init__(shader, [vertices], faces)
 
         names = ['diffuse_map', 'w_camera_position']
         loc = {n: GL.glGetUniformLocation(shader.glid, n) for n in names}
         self.loc.update(loc)
 
-        # interactive toggles
-        self.wrap = cycle([GL.GL_REPEAT, GL.GL_MIRRORED_REPEAT,
-                           GL.GL_CLAMP_TO_BORDER, GL.GL_CLAMP_TO_EDGE])
-        self.filter = cycle([(GL.GL_NEAREST, GL.GL_NEAREST),
-                             (GL.GL_LINEAR, GL.GL_LINEAR),
-                             (GL.GL_LINEAR, GL.GL_LINEAR_MIPMAP_LINEAR)])
-        wrap_mode, filter_mode = next(self.wrap), next(self.filter)
         self.tex_file = tex_file
 
         self.texture_glid = GL.glGenTextures(1)
@@ -373,9 +381,10 @@ class Skybox(Mesh):
             for i in range(6):
                 image = Image.open("sky/sky{}.png".format(i)).transpose(Image.FLIP_LEFT_RIGHT).resize((900, 900))
                 tex = image.tobytes()
-                GL.glTexImage2D(GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL.GL_RGBA, 900,
-                            900, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, tex)
-
+                GL.glTexImage2D(
+                    GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL.GL_RGBA, 900,
+                    900, 0, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, tex
+                )
 
             GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
             GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
@@ -383,10 +392,9 @@ class Skybox(Mesh):
             GL.glTexParameteri(GL.GL_TEXTURE_CUBE_MAP, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
             GL.glGenerateMipmap(GL.GL_TEXTURE_CUBE_MAP)
             message = 'Loaded texture %s\t'
-            print(message % (tex_file))
+            print(message % tex_file)
         except FileNotFoundError:
             print("ERROR: unable to load texture file %s" % tex_file)
-
 
     def draw(self, projection, view, model, primitives=GL.GL_TRIANGLES):
         GL.glUseProgram(self.shader.glid)
@@ -411,8 +419,6 @@ class TexturedPlane(TexturedMesh):
             ((-1, -1), (1, -1), (1, 1), (-1, 1)), np.float32)
         normals = np.array(((0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)), np.float32)
 
-
-
         # interactive toggles
         self.wrap = cycle([GL.GL_REPEAT, GL.GL_MIRRORED_REPEAT,
                            GL.GL_CLAMP_TO_BORDER, GL.GL_CLAMP_TO_EDGE])
@@ -424,11 +430,16 @@ class TexturedPlane(TexturedMesh):
         self.texture = Texture(tex_file, self.wrap_mode, *self.filter_mode)
 
         super().__init__(shader, self.texture, [vertices, texture_coord, normals], faces,
-                         light_dir= light_dir, light_pos=light_pos, 
-                         k_a = (0.3, 0.3, 0.3), k_s=(0.5, 0.5, 0.5))
+                         light_dir=light_dir, light_pos=light_pos,
+                         k_a=(0.3, 0.3, 0.3), k_s=(0.5, 0.5, 0.5))
 
 
 # ------------  Viewer class & window management ------------------------------
+def on_size(win, _width, _height):
+    """ window size update => update viewport to new framebuffer size """
+    GL.glViewport(0, 0, *glfw.get_framebuffer_size(win))
+
+
 class Viewer(Node):
     """ GLFW viewer window, with classic initialization & graphics loop """
 
@@ -445,16 +456,17 @@ class Viewer(Node):
 
         # make win's OpenGL context current; no OpenGL calls can happen before
         glfw.make_context_current(self.win)
+        glfw.swap_interval(0)
 
-        # initialize trackball
-        self.trackball = Trackball()
+        # initialize camera
+        self.camera = Camera(self.win, y=100, z=100)
         self.mouse = (0, 0)
 
         # register event handlers
         glfw.set_key_callback(self.win, self.on_key)
         glfw.set_cursor_pos_callback(self.win, self.on_mouse_move)
-        glfw.set_scroll_callback(self.win, self.on_scroll)
-        glfw.set_window_size_callback(self.win, self.on_size)
+        glfw.set_mouse_button_callback(self.win, self.on_mouse_click)
+        glfw.set_window_size_callback(self.win, on_size)
 
         # useful message to check OpenGL renderer characteristics
         print('OpenGL', GL.glGetString(GL.GL_VERSION).decode() + ', GLSL',
@@ -471,32 +483,54 @@ class Viewer(Node):
 
     def run(self):
         """ Main render loop for this OpenGL window """
+        last_debug_time = time.time()
+        last_frame_time = 0.
+        frames = 0
         while not glfw.window_should_close(self.win):
-            # clear draw buffer and depth buffer (<-TP2)
-            GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
 
-            win_size = glfw.get_window_size(self.win)
-            view = self.trackball.view_matrix()
-            projection = self.trackball.projection_matrix(win_size)
+            now = time.time() * 1000
+            rendered = False
+            if now - last_frame_time >= 1000 / 144:     # Target 144FPS
+                # clear draw buffer and depth buffer (<-TP2)
+                GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
 
-            # draw our scene objects
-            self.draw(projection, view, identity())
+                win_size = glfw.get_window_size(self.win)
+                view = self.camera.get_view()
+                projection = self.camera.get_projection(win_size)
 
-            # flush render commands, and swap draw buffers
-            glfw.swap_buffers(self.win)
+                # draw our scene objects
+                self.draw(projection, view, identity())
+
+                # flush render commands, and swap draw buffers
+                glfw.swap_buffers(self.win)
+
+                # Update frame statistics
+                rendered = True
+                frames += 1
 
             # Poll for and process events
+            self.camera.process_input(self.win)
             glfw.poll_events()
+
+            if time.time() - last_debug_time >= 1:
+                glfw.set_window_title(self.win, "Viewer ({:.02f} FPS)".format(frames))
+                last_debug_time = time.time()
+                frames = 0
+
+            if rendered:
+                last_frame_time = time.time() * 1000
 
     def on_key(self, _win, key, _scancode, action, _mods):
         """ 'Q' or 'Escape' quits """
         if action == glfw.PRESS or action == glfw.REPEAT:
             if key == glfw.KEY_ESCAPE or key == glfw.KEY_Q:
                 glfw.set_window_should_close(self.win, True)
-            if key == glfw.KEY_W:
+            if key == glfw.KEY_F:
                 GL.glPolygonMode(GL.GL_FRONT_AND_BACK, next(self.fill_modes))
-            if key == glfw.KEY_SPACE:
+            if key == glfw.KEY_BACKSPACE:
                 glfw.set_time(0)
+
+            self.camera.on_key(key, action)
 
             # call Node.key_handler which calls key_handlers for all drawables
             self.key_handler(key)
@@ -505,15 +539,8 @@ class Viewer(Node):
         """ Rotate on left-click & drag, pan on right-click & drag """
         old = self.mouse
         self.mouse = (xpos, glfw.get_window_size(win)[1] - ypos)
-        if glfw.get_mouse_button(win, glfw.MOUSE_BUTTON_LEFT):
-            self.trackball.drag(old, self.mouse, glfw.get_window_size(win))
-        if glfw.get_mouse_button(win, glfw.MOUSE_BUTTON_RIGHT):
-            self.trackball.pan(old, self.mouse)
+        self.camera.on_mouse_move(old, self.mouse)
 
-    def on_scroll(self, win, _deltax, deltay):
-        """ Scroll controls the camera distance to trackball center """
-        self.trackball.zoom(deltay, glfw.get_window_size(win)[1])
-
-    def on_size(self, win, _width, _height):
-        """ window size update => update viewport to new framebuffer size """
-        GL.glViewport(0, 0, *glfw.get_framebuffer_size(win))
+    def on_mouse_click(self, _win, button, action, _mods):
+        if button == glfw.MOUSE_BUTTON_LEFT and action == glfw.PRESS:
+            self.camera.capture_cursor()

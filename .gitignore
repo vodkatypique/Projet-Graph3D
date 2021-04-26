@@ -1,2 +1,5 @@
 Projet_Medieval/
 __pycache__/
+.idea
+*.iml
+.vscode

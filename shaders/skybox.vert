@@ -9,6 +9,6 @@ layout(location = 1) in vec2 tex_coord;
 out vec3 frag_tex_coords;
 
 void main() {
-    gl_Position = projection * view * vec4(position, 1);
+    gl_Position = projection * view * model * vec4(position, 1);
     frag_tex_coords = position;
 }
